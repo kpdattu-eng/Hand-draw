@@ -1,89 +1,119 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>Mobile Air Draw</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Air Draw</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; touch-action: none; }
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
         #video { display: none; }
-        .btn { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; 
-               background: #00f2ff; padding: 15px 30px; border-radius: 50px; font-weight: bold; border: none; }
+        .controls { position: fixed; top: 10px; left: 10px; z-index: 100; display: flex; gap: 10px; }
+        button { background: #00f2ff; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; color: black; box-shadow: 0 0 10px #00f2ff; }
+        #startBtn { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 20px 40px; font-size: 1.2rem; }
     </style>
 </head>
 <body>
-    <button class="btn" id="startBtn">TAP TO START CAMERA</button>
+
+    <button id="startBtn">TAP TO START CAMERA</button>
+    
+    <div class="controls" id="ui" style="display:none;">
+        <button onclick="location.reload()">Reset All</button>
+        <button onclick="clearCanvas()">Clear Drawing</button>
+    </div>
+
     <video id="video" playsinline></video>
-    <canvas id="skeleton_canvas"></canvas>
-    <canvas id="drawing_canvas"></canvas>
+    <canvas id="canvas_bg"></canvas>
+    <canvas id="canvas_draw"></canvas>
 
     <script>
         const video = document.getElementById('video');
-        const sCanvas = document.getElementById('skeleton_canvas');
-        const dCanvas = document.getElementById('drawing_canvas');
-        const sCtx = sCanvas.getContext('2d');
-        const dCtx = dCanvas.getContext('2d');
+        const canvasBg = document.getElementById('canvas_bg');
+        const canvasDraw = document.getElementById('canvas_draw');
+        const ctxBg = canvasBg.getContext('2d');
+        const ctxDraw = canvasDraw.getContext('2d');
         const startBtn = document.getElementById('startBtn');
+        const ui = document.getElementById('ui');
+
+        let lastX, lastY, isDrawing = false;
 
         function resize() {
-            sCanvas.width = dCanvas.width = window.innerWidth;
-            sCanvas.height = dCanvas.height = window.innerHeight;
+            canvasBg.width = canvasDraw.width = window.innerWidth;
+            canvasBg.height = canvasDraw.height = window.innerHeight;
         }
         window.addEventListener('resize', resize);
         resize();
 
-        let lastX, lastY, drawing = false;
+        function clearCanvas() {
+            ctxDraw.clearRect(0, 0, canvasDraw.width, canvasDraw.height);
+        }
 
-        function onResults(res) {
-            sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
-            // Draw mirrored video preview
-            sCtx.save();
-            sCtx.scale(-1, 1);
-            sCtx.drawImage(res.image, -sCanvas.width, 0, sCanvas.width, sCanvas.height);
-            sCtx.restore();
+        // --- THIS IS THE ONRESULTS FUNCTION ---
+        function onResults(results) {
+            ctxBg.save();
+            ctxBg.clearRect(0, 0, canvasBg.width, canvasBg.height);
+            
+            // Mirror the video to act like a real mirror
+            ctxBg.translate(canvasBg.width, 0);
+            ctxBg.scale(-1, 1);
+            ctxBg.drawImage(results.image, 0, 0, canvasBg.width, canvasBg.height);
 
-            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-                const landmarks = res.multiHandLandmarks[0];
-                
-                // Draw Skeleton Lines on Hand
-                drawConnectors(sCtx, landmarks, HAND_CONNECTIONS, {color: '#00f2ff', lineWidth: 3});
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    // Draw tracking lines on hand
+                    drawConnectors(ctxBg, landmarks, HAND_CONNECTIONS, {color: '#00f2ff', lineWidth: 4});
+                    drawLandmarks(ctxBg, landmarks, {color: '#ff0077', lineWidth: 1, radius: 4});
 
-                const tip = landmarks[8]; // Index tip
-                const base = landmarks[6]; // Index base
-                const x = (1 - tip.x) * dCanvas.width;
-                const y = tip.y * dCanvas.height;
+                    // Drawing Logic
+                    const indexTip = landmarks[8];
+                    const indexBase = landmarks[6];
+                    
+                    // Match coordinates to the mirrored screen
+                    const x = (1 - indexTip.x) * canvasDraw.width;
+                    const y = indexTip.y * canvasDraw.height;
 
-                if (tip.y < base.y) { // Draw gesture
-                    if (!drawing) { drawing = true; lastX = x; lastY = y; }
-                    dCtx.beginPath();
-                    dCtx.strokeStyle = 'white';
-                    dCtx.lineWidth = 15;
-                    dCtx.lineCap = 'round';
-                    dCtx.shadowBlur = 15;
-                    dCtx.shadowColor = '#00f2ff';
-                    dCtx.moveTo(lastX, lastY);
-                    dCtx.lineTo(x, y);
-                    dCtx.stroke();
-                    lastX = x; lastY = y;
-                } else { drawing = false; }
+                    // Gesture: Index finger point up = Draw
+                    if (indexTip.y < indexBase.y) {
+                        if (!isDrawing) {
+                            isDrawing = true;
+                            lastX = x; lastY = y;
+                        }
+                        ctxDraw.beginPath();
+                        ctxDraw.lineCap = 'round';
+                        ctxDraw.lineWidth = 15;
+                        ctxDraw.shadowBlur = 20;
+                        ctxDraw.shadowColor = '#00f2ff';
+                        ctxDraw.strokeStyle = 'white';
+                        ctxDraw.moveTo(lastX, lastY);
+                        ctxDraw.lineTo(x, y);
+                        ctxDraw.stroke();
+                        lastX = x; lastY = y;
+                    } else {
+                        isDrawing = false;
+                    }
+                }
             }
+            ctxBg.restore();
         }
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
         hands.onResults(onResults);
 
         startBtn.onclick = () => {
             const camera = new Camera(video, {
                 onFrame: async () => { await hands.send({image: video}); },
-                facingMode: 'user', width: 1280, height: 720
+                width: 1280, height: 720, facingMode: 'user'
             });
             camera.start();
             startBtn.style.display = 'none';
+            ui.style.display = 'flex';
         };
     </script>
 </body>
 </html>
+
+        
