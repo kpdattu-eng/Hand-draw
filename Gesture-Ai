@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Mobile Air Draw</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; touch-action: none; }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #video { display: none; }
+        .btn { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; 
+               background: #00f2ff; padding: 15px 30px; border-radius: 50px; font-weight: bold; border: none; }
+    </style>
+</head>
+<body>
+    <button class="btn" id="startBtn">TAP TO START CAMERA</button>
+    <video id="video" playsinline></video>
+    <canvas id="skeleton_canvas"></canvas>
+    <canvas id="drawing_canvas"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const sCanvas = document.getElementById('skeleton_canvas');
+        const dCanvas = document.getElementById('drawing_canvas');
+        const sCtx = sCanvas.getContext('2d');
+        const dCtx = dCanvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+
+        function resize() {
+            sCanvas.width = dCanvas.width = window.innerWidth;
+            sCanvas.height = dCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let lastX, lastY, drawing = false;
+
+        function onResults(res) {
+            sCtx.clearRect(0, 0, sCanvas.width, sCanvas.height);
+            // Draw mirrored video preview
+            sCtx.save();
+            sCtx.scale(-1, 1);
+            sCtx.drawImage(res.image, -sCanvas.width, 0, sCanvas.width, sCanvas.height);
+            sCtx.restore();
+
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                const landmarks = res.multiHandLandmarks[0];
+                
+                // Draw Skeleton Lines on Hand
+                drawConnectors(sCtx, landmarks, HAND_CONNECTIONS, {color: '#00f2ff', lineWidth: 3});
+
+                const tip = landmarks[8]; // Index tip
+                const base = landmarks[6]; // Index base
+                const x = (1 - tip.x) * dCanvas.width;
+                const y = tip.y * dCanvas.height;
+
+                if (tip.y < base.y) { // Draw gesture
+                    if (!drawing) { drawing = true; lastX = x; lastY = y; }
+                    dCtx.beginPath();
+                    dCtx.strokeStyle = 'white';
+                    dCtx.lineWidth = 15;
+                    dCtx.lineCap = 'round';
+                    dCtx.shadowBlur = 15;
+                    dCtx.shadowColor = '#00f2ff';
+                    dCtx.moveTo(lastX, lastY);
+                    dCtx.lineTo(x, y);
+                    dCtx.stroke();
+                    lastX = x; lastY = y;
+                } else { drawing = false; }
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        startBtn.onclick = () => {
+            const camera = new Camera(video, {
+                onFrame: async () => { await hands.send({image: video}); },
+                facingMode: 'user', width: 1280, height: 720
+            });
+            camera.start();
+            startBtn.style.display = 'none';
+        };
+    </script>
+</body>
+</html>
