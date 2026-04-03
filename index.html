@@ -1,39 +1,37 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Air Canvas Pro</title>
+    <title>Infinity Neon Draw</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
-        /* Layer 1: The Video & Skeleton */
-        #canvas_bg { position: absolute; top: 0; left: 0; z-index: 1; width: 100vw; height: 100vh; }
-        /* Layer 2: The Neon Drawing */
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        #canvas_bg { position: absolute; top: 0; left: 0; z-index: 1; width: 100vw; height: 100vh; filter: brightness(0.6); }
         #canvas_draw { position: absolute; top: 0; left: 0; z-index: 2; width: 100vw; height: 100vh; pointer-events: none; }
-        #video { display: none; }
-        
-        .ui { position: fixed; top: 15px; left: 15px; z-index: 100; display: none; gap: 10px; }
+        .ui { position: fixed; top: 20px; left: 20px; z-index: 100; display: none; gap: 10px; }
         button { 
-            background: rgba(0, 242, 255, 0.2); border: 1px solid #00f2ff; padding: 12px 20px; 
-            border-radius: 10px; color: #00f2ff; font-weight: bold; backdrop-filter: blur(5px);
+            background: white; border: none; padding: 12px 25px; 
+            border-radius: 30px; font-weight: bold; color: black;
+            box-shadow: 0 0 15px rgba(255,255,255,0.4);
         }
         #startBtn { 
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-            z-index: 200; background: #00f2ff; color: black; padding: 20px 40px; 
-            border-radius: 50px; font-size: 1.2rem; border: none; box-shadow: 0 0 20px #00f2ff;
+            z-index: 200; background: linear-gradient(45deg, #ff0077, #00f2ff); 
+            color: white; padding: 20px 40px; border-radius: 50px; font-size: 1.2rem; border: none;
         }
     </style>
 </head>
 <body>
 
-    <button id="startBtn">START AIR DRAW</button>
+    <button id="startBtn">ACTIVATE MAGIC DRAW</button>
     
     <div class="ui" id="ui_layer">
         <button onclick="clearCanvas()">CLEAR</button>
-        <button onclick="location.reload()">RESET</button>
+        <button onclick="location.reload()">RELOAD</button>
     </div>
 
     <video id="video" playsinline></video>
@@ -49,7 +47,8 @@
         const startBtn = document.getElementById('startBtn');
         const uiLayer = document.getElementById('ui_layer');
 
-        let lastX, lastY, isDrawing = false;
+        let lastX, lastY, hue = 0;
+        let isFirstPoint = true;
 
         function resize() {
             canvasBg.width = canvasDraw.width = window.innerWidth;
@@ -60,68 +59,63 @@
 
         function clearCanvas() {
             ctxDraw.clearRect(0, 0, canvasDraw.width, canvasDraw.height);
+            isFirstPoint = true;
         }
 
         function onResults(results) {
-            // --- 1. SETUP BACKGROUND CANVAS ---
             ctxBg.save();
             ctxBg.clearRect(0, 0, canvasBg.width, canvasBg.height);
-            
-            // Mirror the entire Background context
             ctxBg.translate(canvasBg.width, 0);
             ctxBg.scale(-1, 1);
-            
-            // Draw Video
             ctxBg.drawImage(results.image, 0, 0, canvasBg.width, canvasBg.height);
 
-            if (results.multiHandLandmarks) {
-                for (const landmarks of results.multiHandLandmarks) {
-                    // Draw Skeleton (Correctly Mirrored)
-                    drawConnectors(ctxBg, landmarks, HAND_CONNECTIONS, {color: '#00f2ff', lineWidth: 3});
-                    drawLandmarks(ctxBg, landmarks, {color: '#ff0077', lineWidth: 1, radius: 3});
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Draw cool thin tracking lines
+                drawConnectors(ctxBg, landmarks, HAND_CONNECTIONS, {color: 'rgba(255,255,255,0.5)', lineWidth: 2});
 
-                    // --- 2. SETUP DRAWING COORDINATES ---
-                    // landmark 8 = Index Finger Tip
-                    // landmark 6 = Index Finger PIP (joint below tip)
-                    
-                    // IMPORTANT: We use (1 - x) to match the mirrored video
-                    const x = (1 - landmarks[8].x) * canvasDraw.width;
-                    const y = landmarks[8].y * canvasDraw.height;
+                // Get Index Tip position
+                const x = (1 - landmarks[8].x) * canvasDraw.width;
+                const y = landmarks[8].y * canvasDraw.height;
 
-                    // Gesture Check: Is Index Finger Up?
-                    if (landmarks[8].y < landmarks[6].y) {
-                        if (!isDrawing) {
-                            isDrawing = true;
-                            lastX = x; lastY = y;
-                        }
-                        
-                        // DRAW THE NEON BALLOON LINE
-                        ctxDraw.beginPath();
-                        ctxDraw.lineCap = 'round';
-                        ctxDraw.lineWidth = 15;
-                        ctxDraw.shadowBlur = 15;
-                        ctxDraw.shadowColor = '#00f2ff';
-                        ctxDraw.strokeStyle = 'white';
-                        ctxDraw.moveTo(lastX, lastY);
-                        ctxDraw.lineTo(x, y);
-                        ctxDraw.stroke();
-                        
-                        lastX = x; lastY = y;
-                    } else {
-                        isDrawing = false;
-                    }
+                // --- UNIQUE DRAWING STYLE ---
+                if (isFirstPoint) {
+                    lastX = x; lastY = y;
+                    isFirstPoint = false;
                 }
+
+                ctxDraw.beginPath();
+                ctxDraw.lineCap = 'round';
+                ctxDraw.lineJoin = 'round';
+                
+                // Dynamic unique thickness based on speed (simulated by movement)
+                const dist = Math.hypot(x - lastX, y - lastY);
+                ctxDraw.lineWidth = Math.min(25, Math.max(8, dist * 2));
+
+                // Rainbow Neon Cycle
+                hue = (hue + 2) % 360; 
+                const color = `hsl(${hue}, 100%, 60%)`;
+                
+                ctxDraw.shadowBlur = 20;
+                ctxDraw.shadowColor = color;
+                ctxDraw.strokeStyle = 'white'; // White center makes it look like a tube
+                
+                ctxDraw.moveTo(lastX, lastY);
+                ctxDraw.lineTo(x, y);
+                ctxDraw.stroke();
+
+                lastX = x;
+                lastY = y;
+            } else {
+                // Reset point when hand is lost so it doesn't "jump" across screen
+                isFirstPoint = true;
             }
             ctxBg.restore();
         }
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ 
-            maxNumHands: 1, 
-            modelComplexity: 1, 
-            minDetectionConfidence: 0.6, 
-            minTrackingConfidence: 0.6 
-        });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
         hands.onResults(onResults);
 
         startBtn.onclick = () => {
